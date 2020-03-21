@@ -14,6 +14,7 @@
 #include <string>
 #include <array>
 #include <memory>
+#include <mutex>
 
 #include "hash/hash_table.h"
 
@@ -91,6 +92,7 @@ private:
   // Bucket Address Table a.k.a Directory
   std::vector<Bucket*> bucketAddressTable = {};
 
+  std::mutex latch;
 
   /*
    * helper function to return Const Pointer to bucket of the key

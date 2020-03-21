@@ -61,6 +61,7 @@ int ExtendibleHash<K, V>::GetNumBuckets() const {
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
+  std::lock_guard<std::mutex> guard(latch);
   const auto bucket = GetBucket(key);
   const auto& keys = bucket->keys;
   const auto it = std::find(keys.cbegin(), keys.cend(), key);
@@ -79,6 +80,7 @@ bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Remove(const K &key) {
+  std::lock_guard<std::mutex> guard(latch);
   const auto bucket = GetBucket(key);
   auto& keys = bucket->keys;
   const auto it = std::find(keys.cbegin(), keys.cend(), key);
@@ -123,6 +125,7 @@ bool ExtendibleHash<K, V>::Exists(const K &key, const V &value) {
  */
 template <typename K, typename V>
 void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
+  std::lock_guard<std::mutex> guard(latch);
   // 0. Check the existence
   if (Exists(key, value)) return;
 

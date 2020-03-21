@@ -308,34 +308,34 @@ TEST(ExtendibleHashTest, ConcurrentInsertTest) {
   }
 }
 
-//TEST(ExtendibleHashTest, ConcurrentRemoveTest) {
-//  const int num_threads = 5;
-//  const int num_runs = 50;
-//  for (int run = 0; run < num_runs; run++) {
-//    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(2)};
-//    std::vector<std::thread> threads;
-//    std::vector<int> values{0, 10, 16, 32, 64};
-//    for (int value : values) {
-//      test->Insert(value, value);
-//    }
-//    EXPECT_EQ(test->GetGlobalDepth(), 6);
-//    for (int tid = 0; tid < num_threads; tid++) {
-//      threads.push_back(std::thread([tid, &test, &values]() {
-//        test->Remove(values[tid]);
-//        test->Insert(tid + 4, tid + 4);
-//      }));
-//    }
-//    for (int i = 0; i < num_threads; i++) {
-//      threads[i].join();
-//    }
-//    EXPECT_EQ(test->GetGlobalDepth(), 6);
-//    int val;
-//    EXPECT_EQ(0, test->Find(0, val));
-//    EXPECT_EQ(1, test->Find(8, val));
-//    EXPECT_EQ(0, test->Find(16, val));
-//    EXPECT_EQ(0, test->Find(3, val));
-//    EXPECT_EQ(1, test->Find(4, val));
-//  }
-//}
+TEST(ExtendibleHashTest, ConcurrentRemoveTest) {
+  const int num_threads = 5;
+  const int num_runs = 50;
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(2)};
+    std::vector<std::thread> threads;
+    std::vector<int> values{0, 10, 16, 32, 64};
+    for (int value : values) {
+      test->Insert(value, value);
+    }
+    EXPECT_EQ(test->GetGlobalDepth(), 6);
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &values]() {
+        test->Remove(values[tid]);
+        test->Insert(tid + 4, tid + 4);
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+    EXPECT_EQ(test->GetGlobalDepth(), 6);
+    int val;
+    EXPECT_EQ(0, test->Find(0, val));
+    EXPECT_EQ(1, test->Find(8, val));
+    EXPECT_EQ(0, test->Find(16, val));
+    EXPECT_EQ(0, test->Find(3, val));
+    EXPECT_EQ(1, test->Find(4, val));
+  }
+}
 
 } // namespace cmudb
