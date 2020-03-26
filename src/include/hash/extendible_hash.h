@@ -17,6 +17,7 @@
 #include <mutex>
 
 #include "hash/hash_table.h"
+#include "common/rwmutex.h"
 
 namespace cmudb {
 
@@ -92,7 +93,10 @@ private:
   // Bucket Address Table a.k.a Directory
   std::vector<Bucket*> bucketAddressTable = {};
 
+  RWMutex mutex;
+
   std::mutex latch;
+
 
   /*
    * helper function to return Const Pointer to bucket of the key

@@ -1,6 +1,8 @@
 /**
  * LRU implementation
  */
+#include <cassert>
+
 #include "buffer/lru_replacer.h"
 #include "page/page.h"
 
@@ -13,13 +15,35 @@ template <typename T> LRUReplacer<T>::~LRUReplacer() {}
 /*
  * Insert value into LRU
  */
-template <typename T> void LRUReplacer<T>::Insert(const T &value) {}
+template <typename T> void LRUReplacer<T>::Insert(const T &value) {
+  std::lock_guard<std::mutex> lockGuard(latch);
+  // 1. Check if the value already there
+  const auto got = ht.find(value);
+  if (got == ht.end()) {
+    // 2.1 value no there, then insert it
+    list.emplace_front(value);
+    ht.emplace(value, list.begin());
+  } else {
+    // 2.2 value already there, adjust the LRU list
+    list.splice(list.begin(), list, got->second);
+  }
+}
 
 /* If LRU is non-empty, pop the head member from LRU to argument "value", and
  * return true. If LRU is empty, return false
  */
 template <typename T> bool LRUReplacer<T>::Victim(T &value) {
-  return false;
+  std::lock_guard<std::mutex> lockGuard(latch);
+  // 0. Check the size, if any can be victimized
+  if (ht.size() == 0) return false;
+
+  // 1. Pop from the end of the list
+  value = list.back();
+  list.pop_back();
+
+  // 2. Erase from the hash table
+  ht.erase(value);
+  return true;
 }
 
 /*
@@ -27,10 +51,25 @@ template <typename T> bool LRUReplacer<T>::Victim(T &value) {
  * return false
  */
 template <typename T> bool LRUReplacer<T>::Erase(const T &value) {
-  return false;
+  std::lock_guard<std::mutex> lockGuard(latch);
+  // 1. Check if the value already there
+  const auto got = ht.find(value);
+  if (got == ht.end()) {
+    // 2.1 value no there, do nothing
+    return false;
+  } else {
+    // 2.2 value already there, erase from the LRU list and the hash table
+    ht.erase(got);
+    list.erase(got->second);
+    return true;
+  }
 }
 
-template <typename T> size_t LRUReplacer<T>::Size() { return 0; }
+template <typename T> size_t LRUReplacer<T>::Size() {
+  std::lock_guard<std::mutex> lockGuard(latch);
+  assert(ht.size() == list.size());
+  return ht.size();
+}
 
 template class LRUReplacer<Page *>;
 // test only

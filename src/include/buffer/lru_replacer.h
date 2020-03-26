@@ -9,6 +9,10 @@
 
 #pragma once
 
+#include <list>
+#include <unordered_map>
+#include <mutex>
+
 #include "buffer/replacer.h"
 #include "hash/extendible_hash.h"
 
@@ -27,10 +31,16 @@ public:
 
   bool Erase(const T &value);
 
-  size_t Size();
+  inline size_t Size();
 
 private:
   // add your member variables here
+
+  std::list<T> list;
+
+  std::unordered_map<T, typename std::list<T>::iterator> ht;
+
+  mutable std::mutex latch;
 };
 
 } // namespace cmudb

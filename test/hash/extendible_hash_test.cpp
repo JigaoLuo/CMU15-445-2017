@@ -285,7 +285,7 @@ TEST(ExtendibleHashTest, RandomInsertAndDeleteTest) {
 // ---------------------------------------------------------------------------------
 
 TEST(ExtendibleHashTest, ConcurrentInsertTest) {
-  const int num_runs = 50;
+  const int num_runs = 500;
   const int num_threads = 3;
   // Run concurrent test multiple times to guarantee correctness.
   for (int run = 0; run < num_runs; run++) {
@@ -310,7 +310,7 @@ TEST(ExtendibleHashTest, ConcurrentInsertTest) {
 
 TEST(ExtendibleHashTest, ConcurrentRemoveTest) {
   const int num_threads = 5;
-  const int num_runs = 50;
+  const int num_runs = 500;
   for (int run = 0; run < num_runs; run++) {
     std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(2)};
     std::vector<std::thread> threads;
