@@ -64,10 +64,13 @@ public:
   int GetGlobalDepth() const;
   int GetLocalDepth(int bucket_id) const;
   int GetNumBuckets() const;
+
   // lookup and modifier
   bool Find(const K &key, V &value) override;
   bool Remove(const K &key) override;
   void Insert(const K &key, const V &value) override;
+
+  inline size_t GetSize() override { return size; }  // Added by Jigao
 
 
 private:
@@ -89,6 +92,8 @@ private:
   int globalDepth = 0;
 
   int numBuckets = 0;
+
+  size_t size = 0;
 
   // Bucket Address Table a.k.a Directory
   std::vector<Bucket*> bucketAddressTable = {};

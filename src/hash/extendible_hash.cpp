@@ -93,6 +93,7 @@ bool ExtendibleHash<K, V>::Remove(const K &key) {
     keys.pop_back();
     values[match_index] = values.back();
     values.pop_back();
+    size--;
     return true;
   }
 }
@@ -221,6 +222,7 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
     values_j.emplace_back(value);
   }
 
+  size++;
   assert(keys_j.size() == values_j.size());
   assert(keys_j.size() <= bucketSize);
 }

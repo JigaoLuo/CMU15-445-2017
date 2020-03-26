@@ -16,6 +16,8 @@ public:
   virtual bool Find(const K &key, V &value) = 0;
   virtual bool Remove(const K &key) = 0;
   virtual void Insert(const K &key, const V &value) = 0;
+
+  virtual size_t GetSize() = 0;  // Added by Jigao
 };
 
 } // namespace cmudb
