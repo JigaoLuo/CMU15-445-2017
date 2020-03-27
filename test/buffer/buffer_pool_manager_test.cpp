@@ -8,7 +8,7 @@
 #include "gtest/gtest.h"
 
 namespace cmudb {
-
+//TODO: add more multithread tests
 TEST(BufferPoolManagerTest, SampleTest) {
   page_id_t temp_page_id;
 
