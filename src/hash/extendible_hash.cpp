@@ -1,6 +1,4 @@
 #include <list>
-#include <functional>
-#include <algorithm>
 #include <cassert>
 
 #include "hash/extendible_hash.h"
@@ -13,13 +11,9 @@ namespace cmudb {
  * array_size: fixed array size for each bucket
  */
 template <typename K, typename V>
-ExtendibleHash<K, V>::ExtendibleHash(size_t size) {
-  bucketSize = size;
-
+ExtendibleHash<K, V>::ExtendibleHash(size_t size) : bucketSize(size)  {
   // init bucket address table with the first bucket
-  auto bucket = new Bucket();
-  numBuckets++;
-  bucketAddressTable.emplace_back(bucket);
+  bucketAddressTable.emplace_back(new Bucket());
 }
 
 /*
@@ -27,6 +21,8 @@ ExtendibleHash<K, V>::ExtendibleHash(size_t size) {
  */
 template <typename K, typename V>
 size_t ExtendibleHash<K, V>::HashKey(const K &key) const {
+  // std::hash<>: assumption already has specialization for type K
+  // namespace std have standard specializations for basic types.
   return std::hash<K>{}(key);
 }
 
@@ -36,6 +32,7 @@ size_t ExtendibleHash<K, V>::HashKey(const K &key) const {
  */
 template <typename K, typename V>
 int ExtendibleHash<K, V>::GetGlobalDepth() const {
+  std::shared_lock<std::shared_mutex> shared_lock(global_latch);
   return globalDepth;
 }
 
@@ -45,6 +42,7 @@ int ExtendibleHash<K, V>::GetGlobalDepth() const {
  */
 template <typename K, typename V>
 int ExtendibleHash<K, V>::GetLocalDepth(int bucket_id) const {
+  std::shared_lock<std::shared_mutex> shared_lock(global_latch);
   return bucketAddressTable[bucket_id]->localDepth;
 }
 
@@ -53,6 +51,7 @@ int ExtendibleHash<K, V>::GetLocalDepth(int bucket_id) const {
  */
 template <typename K, typename V>
 int ExtendibleHash<K, V>::GetNumBuckets() const {
+  std::shared_lock<std::shared_mutex> shared_lock(global_latch);
   return numBuckets;
 }
 
@@ -61,17 +60,11 @@ int ExtendibleHash<K, V>::GetNumBuckets() const {
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
-  std::lock_guard<std::mutex> guard(latch);
+  std::shared_lock<std::shared_mutex> global_lock(global_latch);
   const auto bucket = GetBucket(key);
-  const auto& keys = bucket->keys;
-  const auto it = std::find(keys.cbegin(), keys.cend(), key);
-  if (it == keys.end()) {
-    return false;
-  } else {
-    const auto match_index = std::distance(keys.cbegin(), it);
-    value = bucket->values[match_index];
-    return true;
-  }
+  std::shared_lock<std::shared_mutex> bucket_lock_guard(bucket->bucket_shared_latch);
+  global_lock.unlock();
+  return bucket->Find(key, value);
 }
 
 /*
@@ -80,43 +73,22 @@ bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Remove(const K &key) {
-  std::lock_guard<std::mutex> guard(latch);
+  std::lock_guard<std::shared_mutex> global_lock(global_latch);
+  size--;
   const auto bucket = GetBucket(key);
-  auto& keys = bucket->keys;
-  const auto it = std::find(keys.cbegin(), keys.cend(), key);
-  if (it == keys.end()) {
-    return false;
-  } else {
-    const auto match_index = std::distance(keys.cbegin(), it);
-    auto& values = bucket->values;
-    keys[match_index] = keys.back();
-    keys.pop_back();
-    values[match_index] = values.back();
-    values.pop_back();
-    size--;
-    return true;
-  }
+  return bucket->Remove(key);
 }
 
 /*
- * exists function to check the existence of a key
+ * check the existence of a key
  * if exists, return true and UPDATE THE VALUE
  * if not exists, return false
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Exists(const K &key, const V &value) {
-  auto bucket_j = GetBucket(key);
-  auto& keys_j = bucket_j->keys;
-  auto& values_j = bucket_j->values;
-
-  const auto it = std::find(keys_j.cbegin(), keys_j.cend(), key);
-  if (it != keys_j.end()) {
-    const auto match_index = std::distance(keys_j.cbegin(), it);
-    values_j[match_index] = value;
-    return true;
-  } else {
-    return false;
-  }
+  const auto bucket_j = GetBucket(key);
+  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_shared_latch);
+  return bucket_j->Exist(key, value);
 }
 
 /*
@@ -126,13 +98,14 @@ bool ExtendibleHash<K, V>::Exists(const K &key, const V &value) {
  */
 template <typename K, typename V>
 void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
-  std::lock_guard<std::mutex> guard(latch);
-  // 0. Check the existence
+  std::lock_guard<std::shared_mutex> global_lock(global_latch);
+  // 0. Check the existence and update the value
   if (Exists(key, value)) return;
 
   // 1. Look up the correspond bucket
   check:
   auto bucket_j = GetBucket(key);
+  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_shared_latch);
   auto& keys_j = bucket_j->keys;
   auto& values_j = bucket_j->values;
   assert(keys_j.size() == values_j.size());
@@ -140,24 +113,20 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
 
   // 2. Check the bucket, if is full
   if (keys_j.size() == bucketSize) {
-    // 2.１ Bucket full
-    const auto last_n_bit_global = GET_LAST_N_BITS(HashKey(key), globalDepth);
-    const auto last_n_bit_local = GET_LAST_N_BITS(last_n_bit_global, bucket_j->localDepth);
+    // 2.1 Bucket full
+    const auto last_n_bits_global = GET_LAST_N_BITS(HashKey(key), globalDepth);
+    const auto last_n_bits_local = GET_LAST_N_BITS(last_n_bits_global, bucket_j->localDepth);
     const auto old_localDepth = bucket_j->localDepth;
 
     // 2.1.1 Compare the global depth (i) and local depth (i_j)
-    if (globalDepth == bucket_j->localDepth) {
+    if (globalDepth == old_localDepth) {
       // 2.1.1.1 i == i_j, only one entry in the bucket address table points to bucket j
 
       // 2.1.1.1.1 increase the size of the bucket address table.
       //           It replaces each entry by two entries, both of which contain the same pointer as the original entry.
       globalDepth++;
-      const auto old_bat_size = bucketAddressTable.size();
-      for (size_t it = 0; it != old_bat_size; it++) {
-        Bucket* copy = bucketAddressTable[it];
-        bucketAddressTable.emplace_back(copy);
-      }
-      assert((1 << globalDepth) == bucketAddressTable.size());
+      double_size_grow();
+      assert((decltype(bucketAddressTable.size()))(1 << globalDepth) == bucketAddressTable.size());
     }
 
     // 2.1.1.2 i > i_j, more than one entry in the bucket address table points to bucket j.
@@ -167,16 +136,16 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
     // 2.1.2 The system allocates a new bucket z,
     //         and sets i_j and i_z to the value that results from adding 1 to the original i_j value.
     bucket_j->localDepth++;
-    auto bucket_z = new Bucket(bucket_j->localDepth);
+    auto bucket_z = std::make_shared<Bucket>(bucket_j->localDepth);
     numBuckets++;
     auto& keys_z = bucket_z->keys;
     auto& values_z = bucket_z->values;
 
-    // 2.1.3 Next, to adjust the entries in the bucket address table that previously pointed to bucket $j$
-    int base_point = (1 << old_localDepth) + last_n_bit_local;
+    // 2.1.3 Next, to adjust the entries in the bucket address table that previously pointed to bucket j
+    int base_point = (1 << old_localDepth) + last_n_bits_local;
     const int iter_incr = 1 << (bucket_j->localDepth);
     const size_t iterations = std::max(((globalDepth - bucket_j->localDepth) << 1), 1);
-    for (size_t it = 0; it != iterations; it++, base_point+=iter_incr) {
+    for (size_t it = 0; it != iterations; it++, base_point += iter_incr) {
       bucketAddressTable[base_point] = bucket_z;
     }
 
@@ -201,7 +170,7 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
       values_j.pop_back();
     }
 
-    // 2.1.5 Check if there is place to insert after rehasing
+    // 2.1.5 Check if there is place to insert after rehashing
     const bool to_bucket_z = GET_LAST_N_TH_BIT(HashKey(key), bucket_j->localDepth);
     if((matches.empty() && !to_bucket_z) || matches.size() + to_bucket_z > bucketSize) {
       // 2.1.5.1 No place, so repeat again
@@ -210,18 +179,15 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
 
     // 2.1.5.2 Exists space, insert key and value
     if (to_bucket_z) {
-      keys_z.emplace_back(key);
-      values_z.emplace_back(value);
+      bucket_z->Insert(key, value);
     } else {
-      keys_j.emplace_back(key);
-      values_j.emplace_back(value);
+      bucket_j->Insert(key, value);
     }
   } else {
     // 2.2 Bucket not full, just simple insert
-    keys_j.emplace_back(key);
-    values_j.emplace_back(value);
+    bucket_j->Insert(key, value);
   }
-
+  // Insert Done
   size++;
   assert(keys_j.size() == values_j.size());
   assert(keys_j.size() <= bucketSize);

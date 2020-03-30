@@ -59,6 +59,7 @@ TEST(ExtendibleHashTest, SampleTest) {
 
 // ---------------------------------------------------------------------------------
 // Test from https://github.com/yixuaz/CMU-15445/blob/master/cmu_15445_2017(sol).rar
+//           https://github.com/liu-jianhao/CMU-15-445/tree/master/Lab/test
 // START FROM HERE
 TEST(ExtendibleHashTest, SampleTest2) {
   // set leaf size as 2
@@ -203,7 +204,6 @@ TEST(ExtendibleHashTest, BasicRandomTest) {
 
   // insert
   int seed = time(nullptr);
-//  int seed = 1584819513;
   std::cerr << "seed: " << seed << std::endl;
   std::default_random_engine engine(seed);
   std::uniform_int_distribution<int> distribution(0, 1000000);
@@ -281,6 +281,7 @@ TEST(ExtendibleHashTest, RandomInsertAndDeleteTest) {
   delete test;
 }
 // Test from https://github.com/yixuaz/CMU-15445/blob/master/cmu_15445_2017(sol).rar
+//           https://github.com/liu-jianhao/CMU-15-445/tree/master/Lab/test
 // END UNTIL HERE
 // ---------------------------------------------------------------------------------
 
@@ -335,6 +336,327 @@ TEST(ExtendibleHashTest, ConcurrentRemoveTest) {
     EXPECT_EQ(0, test->Find(16, val));
     EXPECT_EQ(0, test->Find(3, val));
     EXPECT_EQ(1, test->Find(4, val));
+  }
+}
+
+// Added by Jigao
+TEST(ExtendibleHashTest, EnormeConcurrentInsertTest) {
+  const int num_runs = 50;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::vector<int>, num_threads> vectors;
+  int counter = 0;
+  for (auto& vec : vectors) {
+    vec.reserve(num_per_threads);
+    for (int i = 0; i < num_per_threads; i++) vec.emplace_back(counter++);
+  }
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &vectors]() {
+        for (const auto ele : vectors[tid]) test->Insert(ele, ele);
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+
+    for (const auto& vec : vectors) {
+      int val;
+      for (const auto ele : vec) {
+        EXPECT_TRUE(test->Find(ele, val));
+        EXPECT_EQ(val, ele);
+      }
+    }
+  }
+}
+
+// Added by Jigao
+TEST(ExtendibleHashTest, EnormeRandomConcurrentInsertTest) {
+  const int num_runs = 50;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::vector<int>, num_threads> vectors;
+
+  int seed = time(nullptr);
+  std::cerr << "seed: " << seed << std::endl;
+  std::default_random_engine engine(seed);
+  std::uniform_int_distribution<int> distribution(0, 1000000);
+
+  for (auto& vec : vectors) {
+    vec.reserve(num_per_threads);
+    for (int i = 0; i < num_per_threads; i++) vec.emplace_back(distribution(engine));
+  }
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &vectors]() {
+        for (const auto ele : vectors[tid]) test->Insert(ele, ele);
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+
+    for (const auto& vec : vectors) {
+      int val;
+      for (const auto ele : vec) {
+        EXPECT_TRUE(test->Find(ele, val));
+        EXPECT_EQ(val, ele);
+      }
+    }
+  }
+}
+
+// Added by Jigao
+TEST(ExtendibleHashTest, EnormeConcurrentRemoveTest) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::vector<int>, num_threads> vectors;
+  int counter = 0;
+  for (auto& vec : vectors) {
+    vec.reserve(num_per_threads);
+    for (int i = 0; i < num_per_threads; i++) vec.emplace_back(counter++);
+  }
+
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+    for (const auto& vec : vectors) {
+      for (const auto ele : vec) {
+        test->Insert(ele, ele);
+      }
+    }
+
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &vectors]() {
+        for (const auto ele : vectors[tid]) {
+          EXPECT_TRUE(test->Remove(ele));
+          EXPECT_FALSE(test->Remove(ele));
+        }
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+  }
+}
+
+// Added by Jigao
+TEST(ExtendibleHashTest, EnormeRandomConcurrentRemoveTest) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::set<int>, num_threads> sets;
+
+  int seed = time(nullptr);
+  std::cerr << "seed: " << seed << std::endl;
+  std::default_random_engine engine(seed);
+
+  int it = 0;
+  for (auto& set : sets) {
+    std::uniform_int_distribution<int> distribution(100000 * it, 100000 * (it + 1));
+    for (int i = 0; i < num_per_threads; i++) set.emplace(distribution(engine));
+    it++;
+  }
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+    for (const auto& set : sets) {
+      for (const auto ele : set) {
+        test->Insert(ele, ele);
+      }
+    }
+
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &sets]() {
+        for (const auto ele : sets[tid]) {
+          EXPECT_TRUE(test->Remove(ele));
+          EXPECT_FALSE(test->Remove(ele));
+        }
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+  }
+}
+
+// Added by Jigao
+TEST(ExtendibleHashTest, EnormeConcurrentTest) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::set<int>, num_threads> sets;
+
+  int seed = time(nullptr);
+  std::cerr << "seed: " << seed << std::endl;
+  std::default_random_engine engine(seed);
+
+  int it = 0;
+  for (auto& set : sets) {
+    std::uniform_int_distribution<int> distribution(100000 * it, 100000 * (it + 1) - 1);
+    for (int i = 0; i < num_per_threads; i++) set.emplace(distribution(engine));
+    it++;
+  }
+
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+
+    for (decltype(sets.size()) i = 0; i < sets.size(); ++i) {
+      if (i % 3 != 0) {
+        for (const auto ele : sets[i])  test->Insert(ele, ele);
+      }
+    }
+
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      if (tid % 3 == 0) {
+        // Insert
+        threads.push_back(std::thread([tid, &test, &sets]() {
+          for (const auto ele : sets[tid]) test->Insert(ele, ele);
+        }));
+      } else if (tid % 3 == 1) {
+        // Find
+        threads.push_back(std::thread([tid, &test, &sets]() {
+          for (const auto ele : sets[tid]) {
+            int val = 0;
+            EXPECT_TRUE(test->Find(ele, val));
+            EXPECT_EQ(val, ele);
+          }
+        }));
+      } else {
+        // Remove
+        threads.push_back(std::thread([tid, &test, &sets]() {
+          for (const auto ele : sets[tid]) {
+            EXPECT_TRUE(test->Remove(ele));
+            EXPECT_FALSE(test->Remove(ele));
+            int val = 0;
+            EXPECT_FALSE(test->Find(ele, val));
+          }
+        }));
+      }
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+  }
+}
+//
+TEST(ExtendibleHashTest, EnormeRandomConcurrentTest) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::vector<int>, num_threads> vectors;
+  int counter = 0;
+  for (auto& vec : vectors) {
+    vec.reserve(num_per_threads);
+    for (int i = 0; i < num_per_threads; i++) vec.emplace_back(counter++);
+  }
+
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+
+    for (decltype(vectors.size()) i = 0; i < vectors.size(); ++i) {
+      if (i % 3 != 0) {
+        for (const auto ele : vectors[i])  test->Insert(ele, ele);
+      }
+    }
+
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      if (tid % 3 == 0) {
+        // Insert
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) test->Insert(ele, ele);
+        }));
+      } else if (tid % 3 == 1) {
+        // Find
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) {
+            int val = 0;
+            EXPECT_TRUE(test->Find(ele, val));
+            EXPECT_EQ(val, ele);
+          }
+        }));
+      } else {
+        // Remove
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) {
+            EXPECT_TRUE(test->Remove(ele));
+            EXPECT_FALSE(test->Remove(ele));
+            int val = 0;
+            EXPECT_FALSE(test->Find(ele, val));
+          }
+        }));
+      }
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+  }
+}
+
+TEST(ExtendibleHashTest, EnormeRandomConcurrentTest2) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_per_threads = 1000;
+  std::array<std::vector<int>, num_threads> vectors;
+  int counter = 0;
+  for (auto& vec : vectors) {
+    vec.reserve(num_per_threads);
+    for (int i = 0; i < num_per_threads; i++) vec.emplace_back(counter++);
+  }
+
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<ExtendibleHash<int, int>> test{new ExtendibleHash<int, int>(100)};
+
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      if (tid % 3 == 0) {
+        // Insert
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) test->Insert(ele, ele);
+        }));
+      } else if (tid % 3 == 1) {
+        // Find
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) {
+            int val = 0;
+            test->Find(ele, val);
+          }
+        }));
+      } else {
+        // Remove
+        threads.push_back(std::thread([tid, &test, &vectors]() {
+          for (const auto ele : vectors[tid]) {
+            test->Remove(ele);
+            int val = 0;
+            EXPECT_FALSE(test->Find(ele, val));
+          }
+        }));
+      }
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
   }
 }
 

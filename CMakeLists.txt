@@ -22,6 +22,9 @@ else()
     message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++1y support. Please use a different C++ compiler.")
 endif()
 
+# Added by Jigao
+set(CMAKE_CXX_STANDARD 17)
+
 # Create a new pre-processor macro __VTableFILE__ that has a truncated
 # path to reduce the size of the debug log messages.
 # Source: http://stackoverflow.com/a/16658858

@@ -13,8 +13,11 @@
 #include <vector>
 #include <string>
 #include <array>
+#include <functional>
+#include <algorithm>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 
 #include "hash/hash_table.h"
 #include "common/rwmutex.h"
@@ -70,47 +73,128 @@ public:
   bool Remove(const K &key) override;
   void Insert(const K &key, const V &value) override;
 
-  inline size_t GetSize() override { return size; }  // Added by Jigao
+  __always_inline size_t GetSize() override { return size; }  // Added by Jigao
 
 
 private:
-  // add your own member variables here
 
   struct Bucket {
     std::vector<K> keys;
     std::vector<V> values;
     int localDepth = 0;
+    std::shared_mutex bucket_shared_latch;
+
 
     // constructor
-    Bucket() {};
+    Bucket() = default;
 
     Bucket(int localDepth) : localDepth(localDepth) {};
+
+    /**
+     * lookup function to find value associate with input key
+     * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+     */
+    inline bool Find(const K &key, V &value) {
+      const auto it = std::find(keys.cbegin(), keys.cend(), key);
+      if (it == keys.end()) {
+        return false;
+      } else {
+        const auto match_index = std::distance(keys.cbegin(), it);
+        value = values[match_index];
+        return true;
+      }
+    }
+
+    /**
+     * check the existence of a key
+     * if exists, return true and UPDATE THE VALUE. Otherwise, return false
+     * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+     */
+    inline bool Exist(const K &key, const V &value) {
+      const auto it = std::find(keys.cbegin(), keys.cend(), key);
+      if (it == keys.end()) {
+        return false;
+      } else {
+        const auto match_index = std::distance(keys.cbegin(), it);
+        values[match_index] = value;
+        return true;
+      }
+    }
+
+    /**
+     * delete <key,value> entry in bucket
+     * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+     */
+    inline bool Remove(const K &key) {
+      const auto it = std::find(keys.cbegin(), keys.cend(), key);
+      if (it == keys.end()) {
+        return false;
+      } else {
+        const auto match_index = std::distance(keys.cbegin(), it);
+        keys[match_index] = keys.back();
+        keys.pop_back();
+        values[match_index] = values.back();
+        values.pop_back();
+        return true;
+      }
+    }
+
+    /**
+     * insert <key,value> entry in bucket
+     * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+     */
+    inline void Insert(const K &key, const V &value) {
+      keys.emplace_back(key);
+      values.emplace_back(value);
+    }
   };
 
-  int bucketSize = 0;
+  // the element number limitation in a single bucket
+  const size_t bucketSize = 0;
 
+  // global depth
   int globalDepth = 0;
 
-  int numBuckets = 0;
+  // number of buckets
+  int numBuckets = 1;
 
+  // number of keys
   size_t size = 0;
 
   // Bucket Address Table a.k.a Directory
-  std::vector<Bucket*> bucketAddressTable = {};
+  std::vector<std::shared_ptr<Bucket>> bucketAddressTable = {};
 
-  RWMutex mutex;
+  mutable std::shared_mutex global_latch;
 
-  std::mutex latch;
-
-
-  /*
-   * helper function to return Const Pointer to bucket of the key
+  /**
+   * helper function to return pointer to bucket of the key
+   * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+   * @param key
+   * @return a shared point of the bucket, where the key lands
    */
-  __always_inline
-  Bucket* GetBucket(const K &key) const {
+  inline std::shared_ptr<Bucket> GetBucket(const K &key) const {
     return bucketAddressTable[GET_LAST_N_BITS(HashKey(key), globalDepth)];
   }
 
-  bool Exists(const K &key, const V &value);
+  /**
+   * check the existence of a key and update the value, if the key exists
+   * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+   * @param key
+   * @param value
+   * @return true for the key exists, otherwise false
+   */
+  inline bool Exists(const K &key, const V &value);
+
+  /**
+   * double the size of bucket address table
+   * NOT THREAD SAFE, MUST PROTECTED BY LATCH
+   */
+  inline void double_size_grow() {
+    const auto old_bat_size = bucketAddressTable.size();
+    for (size_t it = 0; it != old_bat_size; it++) {
+      const auto copy = bucketAddressTable[it];
+      bucketAddressTable.emplace_back(copy);
+    }
+  }
 };
 } // namespace cmudb
