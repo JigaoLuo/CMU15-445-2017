@@ -442,6 +442,8 @@ TEST(ExtendibleHashTest, EnormeConcurrentRemoveTest) {
         for (const auto ele : vectors[tid]) {
           EXPECT_TRUE(test->Remove(ele));
           EXPECT_FALSE(test->Remove(ele));
+          int val = 0;
+          EXPECT_FALSE(test->Find(ele, val));
         }
       }));
     }
@@ -484,6 +486,8 @@ TEST(ExtendibleHashTest, EnormeRandomConcurrentRemoveTest) {
         for (const auto ele : sets[tid]) {
           EXPECT_TRUE(test->Remove(ele));
           EXPECT_FALSE(test->Remove(ele));
+          int val = 0;
+          EXPECT_FALSE(test->Find(ele, val));
         }
       }));
     }

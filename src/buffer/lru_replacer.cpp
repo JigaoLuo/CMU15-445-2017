@@ -16,16 +16,18 @@ template <typename T> LRUReplacer<T>::~LRUReplacer() {}
  * Insert value into LRU
  */
 template <typename T> void LRUReplacer<T>::Insert(const T &value) {
-  std::lock_guard<std::mutex> lockGuard(latch);
+  std::lock_guard<std::shared_mutex> lockGuard(latch);
+  assert(ht.size() == lru_list.size());
+
   // 1. Check if the value already there
   const auto got = ht.find(value);
   if (got == ht.end()) {
     // 2.1 value no there, then insert it
-    list.emplace_front(value);
-    ht.emplace(value, list.begin());
+    lru_list.emplace_front(value);
+    ht.emplace(value, lru_list.begin());
   } else {
     // 2.2 value already there, adjust the LRU list
-    list.splice(list.begin(), list, got->second);
+    lru_list.splice(lru_list.begin(), lru_list, got->second);
   }
 }
 
@@ -33,13 +35,14 @@ template <typename T> void LRUReplacer<T>::Insert(const T &value) {
  * return true. If LRU is empty, return false
  */
 template <typename T> bool LRUReplacer<T>::Victim(T &value) {
-  std::lock_guard<std::mutex> lockGuard(latch);
+  std::lock_guard<std::shared_mutex> lockGuard(latch);
   // 0. Check the size, if any can be victimized
-  if (ht.size() == 0) return false;
+  if (ht.empty()) return false;
+  assert(ht.size() == lru_list.size());
 
   // 1. Pop from the end of the list
-  value = list.back();
-  list.pop_back();
+  value = lru_list.back();
+  lru_list.pop_back();
 
   // 2. Erase from the hash table
   ht.erase(value);
@@ -51,7 +54,9 @@ template <typename T> bool LRUReplacer<T>::Victim(T &value) {
  * return false
  */
 template <typename T> bool LRUReplacer<T>::Erase(const T &value) {
-  std::lock_guard<std::mutex> lockGuard(latch);
+  std::lock_guard<std::shared_mutex> lockGuard(latch);
+  assert(ht.size() == lru_list.size());
+
   // 1. Check if the value already there
   const auto got = ht.find(value);
   if (got == ht.end()) {
@@ -59,15 +64,15 @@ template <typename T> bool LRUReplacer<T>::Erase(const T &value) {
     return false;
   } else {
     // 2.2 value already there, erase from the LRU list and the hash table
+    lru_list.erase(got->second);
     ht.erase(got);
-    list.erase(got->second);
     return true;
   }
 }
 
-template <typename T> size_t LRUReplacer<T>::Size() {
-  std::lock_guard<std::mutex> lockGuard(latch);
-  assert(ht.size() == list.size());
+template <typename T> size_t LRUReplacer<T>::Size() const {
+  std::shared_lock<std::shared_mutex> lockGuard(latch);
+  assert(ht.size() == lru_list.size());
   return ht.size();
 }
 

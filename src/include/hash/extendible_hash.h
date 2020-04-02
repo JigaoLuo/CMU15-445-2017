@@ -73,7 +73,11 @@ public:
   bool Remove(const K &key) override;
   void Insert(const K &key, const V &value) override;
 
-  __always_inline size_t GetSize() override { return size; }  // Added by Jigao
+  // get the size of hash table, added by Jigao
+  __always_inline size_t GetSize() override {
+    std::shared_lock<std::shared_mutex> shared_lock(global_latch);
+    return size;
+  }
 
 
 private:
@@ -82,7 +86,7 @@ private:
     std::vector<K> keys;
     std::vector<V> values;
     int localDepth = 0;
-    std::shared_mutex bucket_shared_latch;
+    std::shared_mutex bucket_latch;
 
 
     // constructor
@@ -94,7 +98,7 @@ private:
      * lookup function to find value associate with input key
      * NOT THREAD SAFE, MUST PROTECTED BY LATCH
      */
-    inline bool Find(const K &key, V &value) {
+    inline bool Find(const K &key, V &value) const {
       const auto it = std::find(keys.cbegin(), keys.cend(), key);
       if (it == keys.end()) {
         return false;
@@ -189,11 +193,9 @@ private:
    * double the size of bucket address table
    * NOT THREAD SAFE, MUST PROTECTED BY LATCH
    */
-  inline void double_size_grow() {
-    const auto old_bat_size = bucketAddressTable.size();
-    for (size_t it = 0; it != old_bat_size; it++) {
-      const auto copy = bucketAddressTable[it];
-      bucketAddressTable.emplace_back(copy);
+  inline void Grow() {
+    for (size_t it = 0, old_size = bucketAddressTable.size(); it != old_size; it++) {
+      bucketAddressTable.emplace_back(bucketAddressTable[it]);
     }
   }
 };

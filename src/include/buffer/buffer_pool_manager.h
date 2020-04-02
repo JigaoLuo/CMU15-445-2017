@@ -8,7 +8,7 @@
 
 #pragma once
 #include <list>
-#include <mutex>
+#include <shared_mutex>
 
 #include "buffer/lru_replacer.h"
 #include "disk/disk_manager.h"
@@ -30,6 +30,8 @@ public:
 
   bool FlushPage(page_id_t page_id);
 
+  void FlushAllPages();
+
   Page *NewPage(page_id_t &page_id);
 
   bool DeletePage(page_id_t page_id);
@@ -41,6 +43,7 @@ public:
    */
   inline int GetPagePinCount(page_id_t page_id) {
     Page *page = nullptr;
+    std::shared_lock<std::shared_mutex> lock(latch_);
     page_table_->Find(page_id, page);
     assert(page != nullptr);
     assert(FindInBuffer(page_id));
@@ -52,6 +55,7 @@ public:
    * @return the size of replacer
    */
   inline size_t GetReplacerSize() {
+    std::shared_lock<std::shared_mutex> lock(latch_);
     return replacer_->Size();
   }
 
@@ -68,6 +72,7 @@ public:
    * @return the size of page table
    */
   inline size_t GetPageTableSize() {
+    std::shared_lock<std::shared_mutex> lock(latch_);
     return page_table_->GetSize();
   }
 
@@ -77,6 +82,7 @@ public:
    */
   inline bool FindInBuffer(page_id_t page_id) {
     Page *page = nullptr;
+    std::shared_lock<std::shared_mutex> lock(latch_);
     return page_table_->Find(page_id, page);
   }
 
@@ -88,8 +94,24 @@ private:
   HashTable<page_id_t, Page *> *page_table_; // to keep track of pages
   Replacer<Page *> *replacer_;   // to find an unpinned page for replacement
   std::list<Page *> *free_list_; // to find a free page for replacement
-  std::mutex latch_;             // to protect shared data structure
+  std::shared_mutex latch_;             // to protect shared data structure
 
+  /**
+   * find a replacement entry from either free list or replacer.
+   * This function is not thread safe, SHOULD BE CALLED WITH PROTECTION OF MUTEX
+   */
   Page *GetVictimPage();
+
+  /**
+   * check if all pages are pinned
+   * This function is not thread safe, SHOULD BE CALLED WITH PROTECTION OF MUTEX
+   */
+  bool IsAllPinned() {
+    for (size_t i = 0; i < pool_size_; i++) {
+      if (pages_[i].pin_count_ != 0) return false;
+    }
+    return true;
+  }
+
   };
 } // namespace cmudb

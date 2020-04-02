@@ -36,7 +36,7 @@ TEST(BufferPoolManagerTest, SampleTest) {
   // all the pages are pinned, the buffer pool is full
   for (int i = 10; i < 15; ++i) {
     EXPECT_EQ(nullptr, bpm.NewPage(temp_page_id));
-    EXPECT_EQ(temp_page_id, INVALID_PAGE_ID);  // Added by Jigao
+    EXPECT_EQ(INVALID_PAGE_ID, temp_page_id);  // Added by Jigao
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
   }
   // upin the first five pages, add them to LRU list, set as dirty
@@ -56,9 +56,9 @@ TEST(BufferPoolManagerTest, SampleTest) {
   EXPECT_EQ(1, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
 
   // fetch page one again
-  EXPECT_EQ(false, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+  EXPECT_FALSE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
   page_zero = bpm.FetchPage(0);
-  EXPECT_EQ(true, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+  EXPECT_TRUE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
   EXPECT_EQ(0, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
   EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
   EXPECT_EQ(1, bpm.GetPagePinCount(0));  // Added by Jigao, GetPagePinCount is a function for test
@@ -100,33 +100,33 @@ TEST(BufferPoolManagerTest, SampleTest2) {
   // all the pages are pinned, the buffer pool is full
   for (int i = 10; i < 15; ++i) {
     EXPECT_EQ(nullptr, bpm.NewPage(temp_page_id));
-    EXPECT_EQ(temp_page_id, INVALID_PAGE_ID);  // Added by Jigao
+    EXPECT_EQ(INVALID_PAGE_ID, temp_page_id);  // Added by Jigao
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
   }
 
   // upin the first page, add them to LRU list, set as dirty
   for (int i = 0; i < 1; ++i) {
-    EXPECT_EQ(true, bpm.UnpinPage(i, true));
+    EXPECT_TRUE(bpm.UnpinPage(i, true));
     EXPECT_EQ(0, bpm.GetPagePinCount(i));  // Added by Jigao, GetPagePinCount is a function for test
     EXPECT_EQ(1, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
 
-    EXPECT_EQ(true, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+    EXPECT_TRUE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
     page_zero = bpm.FetchPage(0);
-    EXPECT_EQ(true, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+    EXPECT_TRUE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
     EXPECT_EQ(0, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
     EXPECT_EQ(1, bpm.GetPagePinCount(i));  // Added by Jigao, GetPagePinCount is a function for test
     EXPECT_EQ(0, strcmp(page_zero->GetData(), "Hello"));
 
-    EXPECT_EQ(true, bpm.UnpinPage(i, true));
+    EXPECT_TRUE(bpm.UnpinPage(i, true));
     EXPECT_EQ(0, bpm.GetPagePinCount(i));  // Added by Jigao, GetPagePinCount is a function for test
     EXPECT_EQ(1, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
 
-    EXPECT_EQ(true, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+    EXPECT_TRUE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
     EXPECT_NE(nullptr, bpm.NewPage(temp_page_id));
-    EXPECT_EQ(false, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+    EXPECT_FALSE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
     EXPECT_EQ(10, temp_page_id);
     EXPECT_EQ(1, bpm.GetPagePinCount(10));  // Added by Jigao, GetPagePinCount is a function for test
     EXPECT_EQ(0, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
@@ -151,9 +151,9 @@ TEST(BufferPoolManagerTest, SampleTest2) {
   EXPECT_EQ(1, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
 
   // fetch page one again
-  EXPECT_EQ(false, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+  EXPECT_FALSE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
   page_zero = bpm.FetchPage(0);
-  EXPECT_EQ(true, bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
+  EXPECT_TRUE(bpm.FindInBuffer(0));  // Added by Jigao, FindInBuffer is a function for test
   EXPECT_EQ(0, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
   EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
   EXPECT_EQ(1, bpm.GetPagePinCount(0));  // Added by Jigao, GetPagePinCount is a function for test

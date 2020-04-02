@@ -62,7 +62,7 @@ template <typename K, typename V>
 bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
   std::shared_lock<std::shared_mutex> global_lock(global_latch);
   const auto bucket = GetBucket(key);
-  std::shared_lock<std::shared_mutex> bucket_lock_guard(bucket->bucket_shared_latch);
+  std::shared_lock<std::shared_mutex> bucket_lock_guard(bucket->bucket_latch);
   global_lock.unlock();
   return bucket->Find(key, value);
 }
@@ -73,9 +73,11 @@ bool ExtendibleHash<K, V>::Find(const K &key, V &value) {
  */
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Remove(const K &key) {
-  std::lock_guard<std::shared_mutex> global_lock(global_latch);
+  std::shared_lock<std::shared_mutex> global_lock(global_latch);
   size--;
   const auto bucket = GetBucket(key);
+  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket->bucket_latch);
+  global_lock.unlock();
   return bucket->Remove(key);
 }
 
@@ -87,7 +89,7 @@ bool ExtendibleHash<K, V>::Remove(const K &key) {
 template <typename K, typename V>
 bool ExtendibleHash<K, V>::Exists(const K &key, const V &value) {
   const auto bucket_j = GetBucket(key);
-  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_shared_latch);
+  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_latch);
   return bucket_j->Exist(key, value);
 }
 
@@ -105,7 +107,7 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
   // 1. Look up the correspond bucket
   check:
   auto bucket_j = GetBucket(key);
-  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_shared_latch);
+  std::lock_guard<std::shared_mutex> bucket_lock_guard(bucket_j->bucket_latch);
   auto& keys_j = bucket_j->keys;
   auto& values_j = bucket_j->values;
   assert(keys_j.size() == values_j.size());
@@ -125,13 +127,13 @@ void ExtendibleHash<K, V>::Insert(const K &key, const V &value) {
       // 2.1.1.1.1 increase the size of the bucket address table.
       //           It replaces each entry by two entries, both of which contain the same pointer as the original entry.
       globalDepth++;
-      double_size_grow();
+      Grow();
       assert((decltype(bucketAddressTable.size()))(1 << globalDepth) == bucketAddressTable.size());
     }
-
     // 2.1.1.2 i > i_j, more than one entry in the bucket address table points to bucket j.
     //                  The system can split bucket $j$ without increasing the size of the bucket address table
     //                  Do Nothing For This Case
+    assert(globalDepth > old_localDepth);
 
     // 2.1.2 The system allocates a new bucket z,
     //         and sets i_j and i_z to the value that results from adding 1 to the original i_j value.

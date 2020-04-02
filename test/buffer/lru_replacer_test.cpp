@@ -4,6 +4,7 @@
 
 #include <thread>
 #include <cstdio>
+#include <atomic>
 #include <include/common/logger.h>
 
 #include "buffer/lru_replacer.h"
@@ -106,6 +107,37 @@ TEST(LRUReplacerTest, BasicTest) {
 // END UNTIL HERE
 // ---------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------
+// Test from https://github.com/jackwener/cmu-15445/blob/master/test/buffer/lru_replacer_test.cpp
+// START FROM HERE
+TEST(LRUReplacerTest, ConcurrencyTest) {
+  const int num_threads = 20;
+  const int num_runs = 500;
+  for (int run = 0; run < num_runs; run++) {
+    std::shared_ptr<LRUReplacer<int>> lru_replacer{new LRUReplacer<int>()};
+    std::vector<std::thread> threads;
+    std::vector<int> value(num_threads);
+    for (int i = 0; i < num_threads; i++) {
+      value[i] = i;
+    }
+
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &lru_replacer, &value]() {
+        lru_replacer->Insert(value[tid]);
+      }));
+    }
+
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+
+    EXPECT_EQ(num_threads, lru_replacer->Size());
+  }
+}
+// Test from https://github.com/jackwener/cmu-15445/blob/master/test/buffer/lru_replacer_test.cpp
+// END UNTIL HERE
+// ---------------------------------------------------------------------------------
+
 // Added by Jigao
 TEST(LRUReplacerTest, ConcurrentInsertTest) {
   const int num_runs = 500;
@@ -170,8 +202,8 @@ TEST(LRUReplacerTest, ConcurrentMultiInsertTest) {
 TEST(LRUReplacerTest, ConcurrentEraseTest) {
   const int num_runs = 500;
   const int num_threads = 20;
-  const int num_insert_per_thread = 10;
-  const int num_erase_per_thread = 5;
+  const int num_insert_per_thread = 100;
+  const int num_erase_per_thread = 50;
 
   // Run concurrent test multiple times to guarantee correctness.
   for (int run = 0; run < num_runs; run++) {
@@ -218,8 +250,8 @@ TEST(LRUReplacerTest, ConcurrentEraseTest) {
 TEST(LRUReplacerTest, ConcurrentVictimTest) {
   const int num_runs = 500;
   const int num_threads = 20;
-  const int num_insert_per_thread = 10;
-  const int num_victim_per_thread = 5;
+  const int num_insert_per_thread = 100;
+  const int num_victim_per_thread = 50;
 
   // Run concurrent test multiple times to guarantee correctness.
   for (int run = 0; run < num_runs; run++) {
@@ -257,6 +289,38 @@ TEST(LRUReplacerTest, ConcurrentVictimTest) {
     int val;
     EXPECT_FALSE(test.Victim(val));
     EXPECT_EQ(test.Size(), 0);
+  }
+}
+
+// Added by Jigao
+TEST(LRUReplacerTest, ConcurrentMixedTest) {
+  const int num_runs = 500;
+  const int num_threads = 20;
+  const int num_insert_per_thread = 200;
+  const int num_victim_per_thread = 50;
+  const int num_erase_per_thread = 50;
+  static_assert(num_insert_per_thread >= num_victim_per_thread + num_erase_per_thread);
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    LRUReplacer<int> test;
+    std::atomic<size_t> fails = 0;
+    std::vector<std::thread> threads;
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.push_back(std::thread([tid, &test, &fails]() {
+        // each thread inserts different values
+        for (size_t i = 0; i < num_insert_per_thread; i++) test.Insert(tid * num_insert_per_thread + i);
+        // each thread erase part of values, which inserted by this thread
+        for (size_t i = 0; i < num_erase_per_thread; i++) if(!test.Erase(tid * num_insert_per_thread + i)) fails++;
+        // each thread victimize part of values, which inserted by this thread
+        int value;
+        for (size_t i = 0; i < num_victim_per_thread; i++) if(!test.Victim(value)) fails++;
+      }));
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+    EXPECT_EQ(test.Size(), num_threads * (num_insert_per_thread - num_victim_per_thread - num_erase_per_thread) + fails);
   }
 }
 

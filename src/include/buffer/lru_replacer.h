@@ -11,7 +11,7 @@
 
 #include <list>
 #include <unordered_map>
-#include <mutex>
+#include <shared_mutex>
 
 #include "buffer/replacer.h"
 #include "hash/extendible_hash.h"
@@ -31,16 +31,14 @@ public:
 
   bool Erase(const T &value);
 
-  inline size_t Size();
+  inline size_t Size() const;
 
 private:
-  // add your member variables here
-
-  std::list<T> list;
+  std::list<T> lru_list;
 
   std::unordered_map<T, typename std::list<T>::iterator> ht;
 
-  mutable std::mutex latch;
+  mutable std::shared_mutex latch;
 };
 
 } // namespace cmudb
