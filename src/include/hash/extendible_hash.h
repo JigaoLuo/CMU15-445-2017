@@ -88,7 +88,6 @@ private:
     int localDepth = 0;
     std::shared_mutex bucket_latch;
 
-
     // constructor
     Bucket() = default;
 

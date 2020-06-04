@@ -55,27 +55,19 @@ Page *BufferPoolManager::FetchPage(page_id_t page_id) {
   if (page_table_->Find(page_id, page)) {
     // 1.1 if exist, pin the page and return immediately
     assert(page != nullptr);
-    if (page->pin_count_ == 0) {
-      const bool erase_res = replacer_->Erase(page); // TODO: NOLINT
+    if (page->pin_count_++ == 0) {
+      const bool erase_res = replacer_->Erase(page);
       assert(erase_res);
     }
-    page->pin_count_++;
     return page;
   }
-  // 1.2 if no exist, find a replacement entry from either free list or replacer.
-  //     (NOTE: always find from free list first)
-  // 2. If the entry chosen for replacement is dirty, write it back to disk.
-  // 3. Delete the entry for the old page from the hash table and insert an entry for the new page.
-  page = GetVictimPage();
-  if (page == nullptr) return nullptr;
-  assert(!page->is_dirty_); assert(page->pin_count_ == 0); assert(page->page_id_ == INVALID_PAGE_ID);
-
-  // 4. Update page metadata, read page content from disk file and return page pointer
-  page->page_id_ = page_id;
-  page->pin_count_ = 1;
-  page_table_->Insert(page_id, page);
-  disk_manager_->ReadPage(page_id, page->data_);
-  return page;
+  // 2.   If all the pages in the buffer pool are pinned, return nullptr.
+  if (free_list_->empty() && replacer_->Size() == 0) {
+    assert(IsAllPinned());
+    return nullptr;
+  }
+  // 3.   Pick a victim page
+  return Evict(page_id, false);
 }
 
 /*
@@ -91,19 +83,14 @@ bool BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty) {
   // 1. search page table.
   // 1.1. If there is no entry in the page table for the given page_id, then return false.
   if (!page_table_->Find(page_id, page) || page == nullptr) return false;
-
   // 1.2. If there is an entry in the page table for the given page_id
   // 1.2.1 if pin_count <= 0 before this call, return false
-  if (page->pin_count_ <= 0) {
-    return false;
-  }
+  if (page->pin_count_ <= 0) return false;
   assert(!replacer_->Erase(page));
   // 1.2.2 is_dirty: set the dirty flag of this page
   page->is_dirty_ |= is_dirty;  // equivalent to: if (is_dirty) page->is_dirty_ = true;
   // 1.2.3 if pin_count > 0, decrement it and if it becomes zero, put it back to replacer
-  if (--page->pin_count_ == 0) {
-    replacer_->Insert(page);
-  }
+  if (--page->pin_count_ == 0) replacer_->Insert(page);
   return true;
 }
 
@@ -134,9 +121,11 @@ bool BufferPoolManager::FlushPage(page_id_t page_id) {
 void BufferPoolManager::FlushAllPages() {
   std::lock_guard<std::shared_mutex> lock(latch_);
   for (size_t i = 0; i < pool_size_; ++i) {
-    const auto flush_res = FlushPage(pages_[i].page_id_);  // TODO: NOLINT
-    assert(flush_res);
-    assert(!pages_[i].is_dirty_);
+    const auto page = pages_ + i;
+    if (page->page_id_ != INVALID_PAGE_ID && page->is_dirty_) {
+      disk_manager_->WritePage(page->page_id_, page->data_);
+      page->is_dirty_ = false;
+    }
   }
 }
 
@@ -160,17 +149,16 @@ bool BufferPoolManager::DeletePage(page_id_t page_id) {
     // 2. pin_count != 0, return false
     if (page->pin_count_ != 0) return false;
     // 3. remove this entry out of page table, reset page metadata and add back to free list.
-    const auto remove_res = page_table_->Remove(page_id);  // NOLINT TODO:
+    const auto remove_res = page_table_->Remove(page_id);
     assert(remove_res);
-    const auto erase_res = replacer_->Erase(page); // NOLINT TODO:
+    const auto erase_res = replacer_->Erase(page);
     assert(erase_res);
     page->ResetMemory();
-    page->is_dirty_ = false;
     page->page_id_ = INVALID_PAGE_ID;
+    page->is_dirty_ = false;
     // 4. call disk manager's DeallocatePage() method to delete from disk file
-    //TODO:这一块思考结构
-    disk_manager_->DeallocatePage(page_id);
     free_list_->emplace_back(page);
+    disk_manager_->DeallocatePage(page_id);
     return true;
   } else {
     assert(page == nullptr);
@@ -192,56 +180,66 @@ bool BufferPoolManager::DeletePage(page_id_t page_id) {
  */
 Page *BufferPoolManager::NewPage(page_id_t &page_id) {
   std::lock_guard<std::shared_mutex> lock(latch_);
-  // 1. choose a victim page either from free list or replacer
-  //    (NOTE: always choose from free list first)
-  Page *page = GetVictimPage();
-  if (page == nullptr) {
-    // 1.1 return nullptr if all the pages in pool are pinned
+  // 1.   If all the pages in the buffer pool are pinned, return nullptr.
+  if (free_list_->empty() && replacer_->Size() == 0) {
+    assert(IsAllPinned());
     page_id = INVALID_PAGE_ID;
     return nullptr;
   }
-  assert(!page->is_dirty_); assert(page->pin_count_ == 0); assert(page->page_id_ == INVALID_PAGE_ID);
   // 2. call disk manager to allocate a page
   page_id = disk_manager_->AllocatePage();
-  // 3. update new page's metadata, zero out memory and add corresponding entry into page table.
-  page->page_id_ = page_id;
-  page->pin_count_ = 1;
-  page_table_->Insert(page_id, page);
-  return page;
+  // 3.   Pick a victim page
+  return Evict(page_id, true);
 }
 
 /**
- * find a replacement entry from either free list or replacer.
- * (NOTE: always find from free list first)
- * If the entry chosen for replacement is dirty, write it back to disk.
- * This function is not thread safe, SHOULD BE CALLED WITH PROTECTION OF MUTEX
- * @return the victim page as pointer, return nullptr if all the pages in pool are pinned
+ * Evict a page from free list or replacer. Always pick from the free list first.
+ * Update select page metadata to contain page_id and add it to the page table.
+ * Not thread safe
+ * Precondition: can find one evict page => !free_list_.empty() || replacer_->Size() != 0
+ * @param new_page if is called by NewPage
+ * @return the frame where page evicted
  */
-Page *BufferPoolManager::GetVictimPage() {
+Page *BufferPoolManager::Evict(page_id_t page_id, bool new_page) {
+  // 1      If P does not exist, find a replacement page (R) from either the free list or the replacer.
+  assert(!free_list_.empty() || replacer_->Size() != 0);
+  assert(IsAllPinned());
+  Page * page;
   if (!free_list_->empty()) {
-    // 1. always find from free list first
-    Page *page = free_list_->front();
-    assert(!page->is_dirty_); assert(page->pin_count_ == 0); assert(page->page_id_ == INVALID_PAGE_ID);
+    // 2. always find from free list first
+    page = free_list_->front();
+    assert(page->pin_count_ == 0);
+    assert(!page->is_dirty_);
+    assert(page->page_id_ == INVALID_PAGE_ID);
     free_list_->pop_front();
-    return page;
+    // 2.1 If not called by NewPage, then have to read the page into frame
+    if (!new_page) disk_manager_->ReadPage(page_id, page->data_);
   } else if (replacer_->Size() != 0) {
-    // 2. then find from replacer
-    Page *page = nullptr;
+    // 3. then find from replacer
     const bool victim_res = replacer_->Victim(page);
-    assert(victim_res); assert(!page->is_dirty_); assert(page->pin_count_ == 0); assert(page->page_id_ == INVALID_PAGE_ID);
-    // 2.1. If the entry chosen for replacement is dirty, write it back to disk.
+    assert(victim_res);
+    assert(page->pin_count_ == 0);
+    assert(page->page_id_ != INVALID_PAGE_ID);
+    // 3.1     If R is dirty, write it back to the disk.
     if (page->is_dirty_) {
       disk_manager_->WritePage(page->page_id_, page->data_);
+      page->is_dirty_ = false;
     }
+    // 4.     Delete R from the page table and insert P.
     page_table_->Remove(page->page_id_);
-    page->page_id_ = INVALID_PAGE_ID;
-    page->ResetMemory();
-    return page;
-  } else {
-    // 3. return nullptr if all the pages in pool are pinned
-    assert(IsAllPinned());
-    return nullptr;
+    replacer_->Erase(page);
+    // 5.     If not called by NewPage, read in the page content from disk
+    if (!new_page) {
+      disk_manager_->ReadPage(page_id, page->data_);
+    } else {
+      page->ResetMemory();
+    }
   }
+  // 6.     Update P's metadata and then return a pointer to P.
+  page->page_id_ = page_id;
+  page->pin_count_ = 1;
+  page_table_->Insert(page->page_id_, page);
+  return page;
 }
 
 

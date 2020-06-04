@@ -104,7 +104,7 @@ TEST(BufferPoolManagerTest, SampleTest2) {
     EXPECT_EQ(10, bpm.GetPageTableSize());  // Added by Jigao, GetPageTableSize is a function for test
   }
 
-  // upin the first page, add them to LRU list, set as dirty
+  // unpin the first page, add them to LRU list, set as dirty
   for (int i = 0; i < 1; ++i) {
     EXPECT_TRUE(bpm.UnpinPage(i, true));
     EXPECT_EQ(0, bpm.GetPagePinCount(i));  // Added by Jigao, GetPagePinCount is a function for test
@@ -146,7 +146,7 @@ TEST(BufferPoolManagerTest, SampleTest2) {
   }
 
   EXPECT_EQ(0, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
-  bpm.UnpinPage(10, true);
+  EXPECT_TRUE(bpm.UnpinPage(10, true));
   EXPECT_EQ(0, bpm.GetPagePinCount(10));  // Added by Jigao, GetPagePinCount is a function for test
   EXPECT_EQ(1, bpm.GetReplacerSize());  // Added by Jigao, GetReplacerSize is a function for test
 
@@ -166,5 +166,54 @@ TEST(BufferPoolManagerTest, SampleTest2) {
 // Test from https://github.com/yixuaz/CMU-15445/blob/master/cmu_15445_2017(sol).rar
 // END UNTIL HERE
 // ---------------------------------------------------------------------------------
+
+
+// Added by Jigao
+// NOLINTNEXTLINE
+TEST(BufferPoolManagerTest, PersistenStartTest) {
+  const size_t buffer_pool_size = 10;
+  const char strings[10][PAGE_SIZE] = {"Hello", "World", "This", "Is", "A",
+                                       "Persistent Start Test", "For", "Buffer Pool Manager", "In", "DBMS"};
+
+  page_id_t temp_page_id;
+
+  DiskManager *disk_manager = new DiskManager("test.db");
+  auto *bpm = new BufferPoolManager(buffer_pool_size, disk_manager);
+
+  // Scenario: We should be able to create new pages until we fill up the buffer pool.
+  page_id_t page_id_temp;
+  for (size_t i = 0; i < buffer_pool_size; ++i) {
+    auto *page = bpm->NewPage(page_id_temp);
+    EXPECT_NE(nullptr, page);
+
+    // Scenario: The buffer pool is empty. We should be able to create a new page.
+    EXPECT_EQ(i, page_id_temp);
+
+    // Scenario: Once we have a page, we should be able to read and write content.
+    snprintf(page->GetData(), PAGE_SIZE, "%s", strings[i]);
+    EXPECT_EQ(0, strcmp(page->GetData(), strings[i]));
+
+    // Scenario: unpinning pages
+    EXPECT_EQ(true, bpm->UnpinPage(i, true));
+  }
+
+  // Scenario: Shutdown buffer pool manager
+  bpm->FlushAllPages();
+  delete bpm;
+
+  // Scenario: Restart
+  bpm = new BufferPoolManager(buffer_pool_size, disk_manager);
+
+  // Scenario: We should be able to fetch the data before the shutdown
+  for (size_t i = 0; i < buffer_pool_size; ++i) {
+    auto *page = bpm->FetchPage(i);
+    EXPECT_EQ(0, strcmp(page->GetData(), strings[i]));
+  }
+
+  // Shutdown the disk manager and remove the temporary file we created.
+  remove("test.db");
+
+  delete bpm;
+}
 
 } // namespace cmudb

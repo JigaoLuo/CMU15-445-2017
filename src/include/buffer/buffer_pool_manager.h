@@ -97,10 +97,13 @@ private:
   std::shared_mutex latch_;             // to protect shared data structure
 
   /**
-   * find a replacement entry from either free list or replacer.
-   * This function is not thread safe, SHOULD BE CALLED WITH PROTECTION OF MUTEX
+   * Evict a page from free list or replacer. Always pick from the free list first.
+   * Update select page metadata to contain page_id and add it to the page table.
+   * Not thread safe
+   * Precondition: can find one evict page => !free_list_.empty() || replacer_->Size() != 0
+   * @return the frame where page evicted
    */
-  Page *GetVictimPage();
+  Page *Evict(page_id_t page_id, bool new_page);
 
   /**
    * check if all pages are pinned
@@ -108,7 +111,8 @@ private:
    */
   bool IsAllPinned() {
     for (size_t i = 0; i < pool_size_; i++) {
-      if (pages_[i].pin_count_ != 0) return false;
+      Page *const page = pages_ + i;
+      if (page->page_id_ != INVALID_PAGE_ID && page->pin_count_ == 0) return false;
     }
     return true;
   }
