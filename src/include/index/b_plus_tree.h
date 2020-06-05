@@ -47,6 +47,7 @@ public:
   // index iterator
   INDEXITERATOR_TYPE Begin();
   INDEXITERATOR_TYPE Begin(const KeyType &key);
+  INDEXITERATOR_TYPE end();
 
   // Print this B+ tree to stdout using a simple command-line
   std::string ToString(bool verbose = false);

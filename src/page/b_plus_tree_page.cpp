@@ -51,3 +51,6 @@ void BPlusTreePage::SetPageId(page_id_t page_id) {}
 void BPlusTreePage::SetLSN(lsn_t lsn) { lsn_ = lsn; }
 
 } // namespace cmudb
+
+// 实现
+// https://github.com/jackwener/cmu-15445/blob/master/src/page/b_plus_tree_page.cpp

@@ -23,6 +23,10 @@ public:
 
   IndexIterator &operator++();
 
+  bool operator==(const IndexIterator &itr);
+
+  bool operator!=(const IndexIterator &itr);
+
 private:
   // add your own private member variables here
 };

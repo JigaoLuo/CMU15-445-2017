@@ -228,3 +228,7 @@ template class BPlusTreeInternalPage<GenericKey<32>, page_id_t,
 template class BPlusTreeInternalPage<GenericKey<64>, page_id_t,
                                            GenericComparator<64>>;
 } // namespace cmudb
+
+
+// 实现
+//https://github.com/jackwener/cmu-15445/blob/master/src/page/b_plus_tree_internal_page.cpp

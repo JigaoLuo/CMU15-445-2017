@@ -198,6 +198,14 @@ INDEXITERATOR_TYPE BPLUSTREE_TYPE::Begin(const KeyType &key) {
   return INDEXITERATOR_TYPE();
 }
 
+/*
+ * Input parameter is void, construct an index iterator representing the end
+ * of the key/value pair in the leaf node
+ * @return : index iterator
+ */
+INDEX_TEMPLATE_ARGUMENTS
+INDEXITERATOR_TYPE BPLUSTREE_TYPE::end() { return INDEXITERATOR_TYPE(); }
+
 /*****************************************************************************
  * UTILITIES AND DEBUG
  *****************************************************************************/
