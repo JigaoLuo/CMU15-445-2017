@@ -1,5 +1,6 @@
 /**
  * b_plus_tree_test.cpp
+ * Test from https://github.com/yixuaz/CMU-15445/blob/master/cmu_15445_2017(sol).rar
  */
 
 #include <cstdio>
@@ -41,6 +42,7 @@ TEST(BptTreeTest, UnitTest) {
   bool verbose = false;
 
   std::cout << usageMessage();
+  //std::cout << "> ";
   // create KeyComparator and index schema
   std::string createStmt = "a bigint";
   Schema *key_schema = ParseCreateStatement(createStmt);
@@ -57,6 +59,7 @@ TEST(BptTreeTest, UnitTest) {
                                                            comparator);
   // create transaction
   Transaction *transaction = new Transaction(0);
+
   while (!quit) {
     std::cout << "> ";
     std::cin >> instruction;
